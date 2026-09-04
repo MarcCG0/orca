@@ -37,8 +37,8 @@ export type NewWorkspaceComposerCardProps = {
   onComposerNodeChange?: (node: HTMLDivElement | null) => void
   nameInputRef?: React.RefObject<HTMLInputElement | null>
   promptTextareaRef?: React.RefObject<HTMLTextAreaElement | null>
-  agentPrompt: string
-  onAgentPromptChange: (value: string) => void
+  agentPrompt?: string
+  onAgentPromptChange?: (value: string) => void
   quickAgent: TuiAgent | null
   onQuickAgentChange: (agent: TuiAgent | null) => void
   eligibleRepos: readonly RepoOption[]

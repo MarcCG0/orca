@@ -9,14 +9,14 @@ type NewWorkspaceComposerPromptSectionProps = Pick<
 >
 
 export function NewWorkspaceComposerPromptSection({
-  agentPrompt,
+  agentPrompt = '',
   onAgentPromptChange,
   promptTextareaRef,
   quickAgent
 }: NewWorkspaceComposerPromptSectionProps): React.JSX.Element {
   const promptInputId = React.useId()
-  // Why: with no agent to launch there is nothing to hand the prompt to.
-  const disabled = quickAgent === null
+  // Why: with no agent to launch, or no handler to receive edits, there is nothing to hand it to.
+  const disabled = quickAgent === null || !onAgentPromptChange
   return (
     <div className="min-w-0 space-y-1">
       <label htmlFor={promptInputId} className="text-xs font-medium text-muted-foreground">
@@ -26,14 +26,14 @@ export function NewWorkspaceComposerPromptSection({
         id={promptInputId}
         ref={promptTextareaRef}
         value={agentPrompt}
-        onChange={(event) => onAgentPromptChange(event.target.value)}
+        onChange={(event) => onAgentPromptChange?.(event.target.value)}
         disabled={disabled}
         rows={2}
         placeholder={
           disabled
             ? translate(
                 'auto.components.NewWorkspaceComposerCard.promptPlaceholderNoAgent',
-                'Choose an agent to send it a first prompt'
+                'Choose an agent to send a first prompt'
               )
             : translate(
                 'auto.components.NewWorkspaceComposerCard.promptPlaceholder',
