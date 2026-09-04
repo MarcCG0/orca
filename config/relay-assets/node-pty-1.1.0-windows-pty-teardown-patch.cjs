@@ -12,14 +12,15 @@ const { join, resolve } = require('node:path')
  * `_inSocket`, and it wraps a real Windows named-pipe handle from `fs.openSync(term.conin, 'w')`.
  * Every terminal leaks one File handle for the life of the host process.
  *
- * The obvious fix -- and the one the desktop patch ships -- releases it at the TOP of the branch,
- * before `_getConsoleProcessList()` forks and before the native kill. That is measurably worse than
- * leaving the leak alone: teardown aborts partway, the forked console-list agent is never reaped,
- * and both pipe handles stay alive instead of one. This asset releases it at the END of the branch
- * instead, after the fork and the kill have already happened.
+ * The obvious fix -- and the placement `config/patches/node-pty@1.1.0.patch` uses -- releases it at
+ * the TOP of the branch, before `_getConsoleProcessList()` forks and before the native kill. That is
+ * measurably worse than leaving the leak alone: teardown aborts partway, the forked console-list
+ * agent is never reaped, and both pipe handles stay alive instead of one. This asset releases it at
+ * the END of the branch instead, after the fork and the kill have already happened.
  *
  * Measured on a Windows SSH host, 20 spawn/kill cycles, handles bucketed by NT object type
- * (identical numbers standalone and through a real relay):
+ * (identical numbers standalone and through a real relay). Every row is the NON-DLL branch, which
+ * is the branch a relay runs -- see the divergence note below for why that matters:
  *
  *   published node-pty        File +1/terminal,  Process flat
  *   desktop patch placement   File +2/terminal,  Process +1/terminal   <-- 3x WORSE
@@ -34,18 +35,30 @@ const { join, resolve } = require('node:path')
  * Why this ships as a relay asset rather than only in config/patches/node-pty@1.1.0.patch: pnpm
  * patches do not cross the SSH boundary -- a relay host runs the tree `npm install` put there.
  *
- * DELIBERATE DIVERGENCE FROM THE DESKTOP: the desktop patch has the early placement and therefore
- * the +2 File / +1 Process regression, measured against its exact installed tree. Correcting it
- * there is a separate change with its own verification, so the two trees differ on this one hunk on
- * purpose, and the test pins that so a future "sync the patches" does not copy the bug back.
+ * DELIBERATE DIVERGENCE FROM THE DESKTOP, AND WHY IT IS NOT A DESKTOP BUG: the two hosts do not run
+ * the same branch of `kill()`. node-pty defaults `_useConptyDll` to false (`windowsPtyAgent.js`).
+ * The desktop sets it true -- `local-pty-utils.ts` via its two spawn sites, and
+ * `native-pty-spawn.ts` -- so it takes the `else` branch, where UPSTREAM ALREADY destroys the input
+ * socket. The relay passes no such option (`src/relay/pty-handler.ts`), so it takes the `!useConptyDll`
+ * branch, which is the one this asset and the desktop patch both edit.
+ *
+ * So the desktop patch's hunk sits on a branch the desktop never executes, and the numbers above --
+ * which were measured with `useConptyDll` unset -- describe the relay's branch, not the desktop's
+ * behavior. An earlier version of this comment claimed the desktop patch made every Windows user
+ * worse off; that was wrong, and it was wrong because the harness that produced it defaulted into
+ * the branch it was not trying to measure.
+ *
+ * The divergence is therefore about which branch each host runs, not about a desktop regression.
+ * The test still pins it, because a future "sync the patches" would put the early placement onto the
+ * relay's branch, where it does cost +2 File and +1 Process per terminal.
  *
  * NOT ADDRESSED, AND A SEPARATE DEFECT THAT IS STILL OPEN: a terminal that exits on its own is
  * still torn down through `kill()` -- both hosts call `destroy()` on natural exit and
- * `WindowsTerminal.destroy()` is `kill()` -- but the shell is already gone by then, and the
- * ordering this patch relies on does not hold. Measured over 20 self-exit cycles with that
- * `destroy()` issued: published +3 File/+1 Process per terminal, desktop-patched +2/+1, this tree
- * +2/+1. So this patch does not close it and the desktop patch does not either. It is reachable
- * for every Windows user, local and relay, on every terminal closed by typing `exit`.
+ * `WindowsTerminal.destroy()` is `kill()` -- but the shell is already gone by then, and the ordering
+ * this patch relies on does not hold. Measured over 20 self-exit cycles with that `destroy()`
+ * issued, again on the NON-DLL branch: published +3 File/+1 Process per terminal, desktop-patched
+ * +2/+1, this tree +2/+1. So this patch does not close it for a relay. The desktop's own self-exit
+ * leak is a different and larger one on the DLL branch, tracked separately.
  */
 
 const EXPECTED_NODE_PTY_VERSION = '1.1.0'
